@@ -106,7 +106,7 @@ import IntegrationsConfigView from "./components/IntegrationsConfigView";
 import WorkspaceSettingsView from "./components/WorkspaceSettingsView";
 
 // UAT Modules
-import UatView from "./components/UatView";
+import UatView from "../components/UatView";
 import UatTesterWorkspaceView from "./components/UatTesterWorkspaceView";
 import UatCoordinatorDashboardView from "./components/UatCoordinatorView";
 import UatTesterManagementView from "./components/UatTesterManagementView";
