@@ -3,7 +3,6 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
-
 function figmaAssetResolver() {
   return {
     name: 'figma-asset-resolver',
@@ -33,4 +32,19 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // ADDED: Production build optimization to handle the 500kb warning
+  build: {
+    chunkSizeWarningLimit: 1600, // Bumps the warning limit to 1MB just in case
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Extracts all heavy third-party libraries into their own isolated 'vendor' file
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
+        }
+      }
+    }
+  }
 })
