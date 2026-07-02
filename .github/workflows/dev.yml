@@ -35,5 +35,5 @@ jobs:
           action: 'upload'
           app_location: '/' # Root directory of your frontend
           api_location: '' # Leave empty if no API
-          output_location: '.dist' # Next.js build output folder
+          output_location: 'dist' # Next.js build output folder
           app_build_command: 'npm install && npm run build'
