@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Plus, Download, Bug, ShieldAlert, AlertCircle, Play, FileText, CheckCircle2, Edit, Trash2, X, Wand2, ListTree, UserCircle2, MonitorSmartphone } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Download, Bug, ShieldAlert, AlertCircle, Play, FileText, CheckCircle2, Edit, Trash2, X, Wand2, ListTree, UserCircle2, MonitorSmartphone, Filter, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
 import * as XLSX from 'xlsx';
@@ -15,6 +15,13 @@ export default function DefectsView({ activeProject }: { activeProject: string }
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // Filter Accordion States
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterSeverity, setFilterSeverity] = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [filterSource, setFilterSource] = useState("All");
+
   const [formData, setFormData] = useState<any>({
     id: "", defect_id: "", title: "", associated_test_case: "", severity: "Medium", priority: "P2", description: "", steps_to_reproduce: "", status: "New", source: "QA"
   });
@@ -70,12 +77,26 @@ export default function DefectsView({ activeProject }: { activeProject: string }
     fetchDefects();
   }, [activeProject]);
 
-  // --- EXPORT LOGIC ---
+  // --- FILTER LOGIC ---
+  const filteredDefects = useMemo(() => {
+    return dbDefects.filter(def => {
+      const matchesSearch = searchQuery === "" || 
+        def.display_title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        def.display_id.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesSeverity = filterSeverity === "All" || def.severity === filterSeverity;
+      const matchesStatus = filterStatus === "All" || def.status === filterStatus;
+      const matchesSource = filterSource === "All" || def.source === filterSource;
+
+      return matchesSearch && matchesSeverity && matchesStatus && matchesSource;
+    });
+  }, [dbDefects, searchQuery, filterSeverity, filterStatus, filterSource]);
+
+  // --- EXPORT LOGIC (Now linked to filtered data) ---
   const exportToExcel = () => {
-    if (dbDefects.length === 0) return alert("No defects to export.");
+    if (filteredDefects.length === 0) return alert("No defects to export based on current filters.");
     
-    // Map data to a clean format for Excel
-    const exportData = dbDefects.map(def => ({
+    const exportData = filteredDefects.map(def => ({
       "Defect ID": def.display_id,
       "Source": def.source,
       "Title": def.display_title,
@@ -90,21 +111,21 @@ export default function DefectsView({ activeProject }: { activeProject: string }
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Defects Ledger");
-    XLSX.writeFile(workbook, `${activeProject}_Defects_Log.xlsx`);
+    XLSX.writeFile(workbook, `${activeProject}_Filtered_Defects_Log.xlsx`);
   };
 
   const exportToWord = () => {
-    if (dbDefects.length === 0) return alert("No defects to export.");
+    if (filteredDefects.length === 0) return alert("No defects to export based on current filters.");
 
-    // Create an MS Word compatible HTML Blob
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Defects Export</title></head><body style='font-family: Arial, sans-serif;'>";
     const footer = "</body></html>";
     
     let html = `<h1 style='color: #333;'>Defects Ledger - ${activeProject}</h1>`;
+    html += "<p style='color: #666; font-size: 12px;'><i>Filtered Export generated from active workspace parameters.</i></p>";
     html += "<table border='1' style='border-collapse: collapse; width: 100%; text-align: left; font-size: 12px;'>";
     html += "<tr style='background-color: #f3f4f6;'><th>ID</th><th>Source</th><th>Title</th><th>Severity</th><th>Status</th><th>Description</th></tr>";
     
-    dbDefects.forEach(def => {
+    filteredDefects.forEach(def => {
       const description = def.actual_behavior || def.actual_result || def.description || "";
       html += `<tr>
         <td style='padding: 8px;'>${def.display_id}</td>
@@ -122,7 +143,7 @@ export default function DefectsView({ activeProject }: { activeProject: string }
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${activeProject}_Defects_Log.doc`;
+    link.download = `${activeProject}_Filtered_Defects.doc`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -230,6 +251,9 @@ export default function DefectsView({ activeProject }: { activeProject: string }
         sub={`Track internal QA bugs and external UAT findings mapped to validation runs for ${activeProject}`}
         actions={
           <div className="flex gap-2">
+            <Btn variant="secondary" onClick={() => setIsFilterOpen(!isFilterOpen)} className={isFilterOpen ? "bg-muted" : ""}>
+              <Filter size={13} /> {isFilterOpen ? "Close Filters" : "Filter Log"}
+            </Btn>
             <Btn variant="secondary" onClick={exportToWord}><FileText size={13} />Word</Btn>
             <Btn variant="secondary" onClick={exportToExcel}><Download size={13} />Excel</Btn>
             <Btn variant="primary" onClick={openNewForm}>
@@ -239,11 +263,87 @@ export default function DefectsView({ activeProject }: { activeProject: string }
         }
       />
 
-      {/* Metrics Row */}
+      {/* Accordion Filter System */}
+      {isFilterOpen && (
+        <Card className="p-4 bg-muted/20 border border-border shadow-sm shrink-0 -mt-1 animate-fade-in">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            {/* Search Input */}
+            <div className="sm:col-span-1 relative">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Text Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
+                <input
+                  type="text"
+                  placeholder="ID or Title..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-sm font-medium bg-background border border-border rounded-lg focus:outline-none focus:border-primary transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Source Filter */}
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Defect Source</label>
+              <select value={filterSource} onChange={e => setFilterSource(e.target.value)} className="w-full px-3 py-2 text-sm font-medium bg-background border border-border rounded-lg focus:outline-none focus:border-primary transition-colors">
+                <option value="All">All Sources</option>
+                <option value="QA">Internal QA</option>
+                <option value="UAT">External UAT</option>
+              </select>
+            </div>
+
+            {/* Severity Filter */}
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Severity Level</label>
+              <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)} className="w-full px-3 py-2 text-sm font-medium bg-background border border-border rounded-lg focus:outline-none focus:border-primary transition-colors">
+                <option value="All">All Severities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Resolution Status</label>
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full px-3 py-2 text-sm font-medium bg-background border border-border rounded-lg focus:outline-none focus:border-primary transition-colors">
+                <option value="All">All Statuses</option>
+                <option value="New">New</option>
+                <option value="Open">Open</option>
+                <option value="Assigned">Assigned</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Ready for Retest">Ready for Retest</option>
+                <option value="Resolved">Resolved</option>
+                <option value="Closed">Closed</option>
+              </select>
+            </div>
+          </div>
+          
+          {/* Filter Status Reset */}
+          {(searchQuery !== "" || filterSeverity !== "All" || filterStatus !== "All" || filterSource !== "All") && (
+            <div className="flex justify-end mt-3 border-t border-border/50 pt-3">
+              <button 
+                onClick={() => {
+                  setSearchQuery("");
+                  setFilterSeverity("All");
+                  setFilterStatus("All");
+                  setFilterSource("All");
+                }}
+                className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors flex items-center gap-1"
+              >
+                <X size={12}/> Clear All Filters
+              </button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Metrics Row (Remains locked to overall project health to prevent confusing total counts) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
         <Card className="p-4 flex items-center justify-between border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-900">
           <div>
-            <div className="text-xs text-red-700 dark:text-red-400 font-medium mb-1">Active Blockers (Critical / High)</div>
+            <div className="text-xs text-red-700 dark:text-red-400 font-medium mb-1">Total Active Blockers (Crit / High)</div>
             <div className="text-2xl font-black text-red-700 dark:text-red-400">
               {dbDefects.filter(d => (d.severity === 'Critical' || d.severity === 'High') && d.status !== 'Closed').length}
             </div>
@@ -252,7 +352,7 @@ export default function DefectsView({ activeProject }: { activeProject: string }
         </Card>
         <Card className="p-4 flex items-center justify-between border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-900">
           <div>
-            <div className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-1">In Triage & Fix Runs</div>
+            <div className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-1">Total In Triage & Fix Runs</div>
             <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">
               {dbDefects.filter(d => d.status === 'New' || d.status === 'Assigned' || d.status === 'In Progress' || d.status === 'Open').length}
             </div>
@@ -261,7 +361,7 @@ export default function DefectsView({ activeProject }: { activeProject: string }
         </Card>
         <Card className="p-4 flex items-center justify-between border-emerald-200 bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-900">
           <div>
-            <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mb-1">Ready / Resolved</div>
+            <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mb-1">Total Ready / Resolved</div>
             <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">
               {dbDefects.filter(d => d.status === 'Ready for Retest' || d.status === 'Resolved').length}
             </div>
@@ -272,17 +372,21 @@ export default function DefectsView({ activeProject }: { activeProject: string }
 
       {loading ? (
         <div className="flex-1 flex justify-center items-center text-muted-foreground text-sm font-mono">Loading unified logs...</div>
-      ) : dbDefects.length === 0 ? (
+      ) : filteredDefects.length === 0 ? (
         <Card className="flex-1 flex flex-col items-center justify-center text-center border-dashed">
-          <Bug size={32} className="text-muted-foreground/50 mb-3" />
-          <h3 className="text-sm font-medium text-foreground">Defect Repository is Clean</h3>
-          <p className="text-xs text-muted-foreground mt-1 mb-4">No validation anomalies or active UAT blockers are logged.</p>
-          <Btn variant="secondary" onClick={openNewForm}>Log First Defect</Btn>
+          <Filter size={32} className="text-muted-foreground/50 mb-3" />
+          <h3 className="text-sm font-medium text-foreground">No Defects Match Criteria</h3>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">Adjust your filters or clear them to view the full ledger.</p>
+          {(searchQuery !== "" || filterSeverity !== "All" || filterStatus !== "All" || filterSource !== "All") && (
+            <Btn variant="secondary" onClick={() => { setSearchQuery(""); setFilterSeverity("All"); setFilterStatus("All"); setFilterSource("All"); }}>
+              Clear Filters
+            </Btn>
+          )}
         </Card>
       ) : (
         <Card className="flex-1 overflow-y-auto custom-scrollbar border border-border shadow-sm p-0">
           <div className="divide-y divide-border">
-            {dbDefects.map(def => (
+            {filteredDefects.map(def => (
               <div 
                 key={def.id} 
                 onClick={() => setSelectedDefect(def)}
