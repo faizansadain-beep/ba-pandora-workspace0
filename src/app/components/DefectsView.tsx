@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Download, Bug, ShieldAlert, AlertCircle, Play, FileText, CheckCircle2, Edit, Trash2, X, Wand2, ListTree, UserCircle2, MonitorSmartphone } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
+import * as XLSX from 'xlsx';
 
 export default function DefectsView({ activeProject }: { activeProject: string }) {
   const [dbDefects, setDbDefects] = useState<any[]>([]);
@@ -51,7 +52,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
             display_id: d.id, // UAT IDs are like BUG-XXXX
             display_title: `${d.feature || d.feature_affected} Issue`,
             tester_name: testerName,
-            // Map UAT specific fields to shared view fields where appropriate
             priority: 'UAT',
             associated_test_case: 'External User Finding'
           }
@@ -70,6 +70,64 @@ export default function DefectsView({ activeProject }: { activeProject: string }
     fetchDefects();
   }, [activeProject]);
 
+  // --- EXPORT LOGIC ---
+  const exportToExcel = () => {
+    if (dbDefects.length === 0) return alert("No defects to export.");
+    
+    // Map data to a clean format for Excel
+    const exportData = dbDefects.map(def => ({
+      "Defect ID": def.display_id,
+      "Source": def.source,
+      "Title": def.display_title,
+      "Severity": def.severity,
+      "Status": def.status,
+      "Priority": def.priority || "N/A",
+      "Tester / Test Case": def.source === 'UAT' ? def.tester_name : def.associated_test_case,
+      "Description": def.actual_behavior || def.actual_result || def.description || "",
+      "Steps to Reproduce": def.steps_to_reproduce || def.steps_performed || "N/A"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Defects Ledger");
+    XLSX.writeFile(workbook, `${activeProject}_Defects_Log.xlsx`);
+  };
+
+  const exportToWord = () => {
+    if (dbDefects.length === 0) return alert("No defects to export.");
+
+    // Create an MS Word compatible HTML Blob
+    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Defects Export</title></head><body style='font-family: Arial, sans-serif;'>";
+    const footer = "</body></html>";
+    
+    let html = `<h1 style='color: #333;'>Defects Ledger - ${activeProject}</h1>`;
+    html += "<table border='1' style='border-collapse: collapse; width: 100%; text-align: left; font-size: 12px;'>";
+    html += "<tr style='background-color: #f3f4f6;'><th>ID</th><th>Source</th><th>Title</th><th>Severity</th><th>Status</th><th>Description</th></tr>";
+    
+    dbDefects.forEach(def => {
+      const description = def.actual_behavior || def.actual_result || def.description || "";
+      html += `<tr>
+        <td style='padding: 8px;'>${def.display_id}</td>
+        <td style='padding: 8px;'>${def.source}</td>
+        <td style='padding: 8px;'>${def.display_title}</td>
+        <td style='padding: 8px;'>${def.severity}</td>
+        <td style='padding: 8px;'>${def.status}</td>
+        <td style='padding: 8px;'>${description}</td>
+      </tr>`;
+    });
+    html += "</table>";
+    
+    const sourceHTML = header + html + footer;
+    const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeProject}_Defects_Log.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // --- CRUD ---
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -77,15 +135,12 @@ export default function DefectsView({ activeProject }: { activeProject: string }
 
     let error;
 
-    // Route the save to the correct table based on the source of the defect
     if (formData.source === 'UAT') {
-      // For UAT, BAs only update triage metadata (Status, Severity) to preserve tester's original report
       const { error: updateError } = await supabase.from('uat_defects')
         .update({ status: formData.status, severity: formData.severity })
         .eq('id', formData.id);
       error = updateError;
     } else {
-      // Internal QA Defect Logic
       const payload = {
         id: isEditMode ? formData.id : `DEF-${Math.floor(Math.random() * 90000)}`,
         defect_id: formData.display_id,
@@ -164,7 +219,7 @@ export default function DefectsView({ activeProject }: { activeProject: string }
       case "Critical": return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
       case "High": return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
       case "Low": return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400";
-      default: return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"; // Medium
+      default: return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
     }
   };
 
@@ -174,12 +229,13 @@ export default function DefectsView({ activeProject }: { activeProject: string }
         title="Unified Defect Resolution Ledger"
         sub={`Track internal QA bugs and external UAT findings mapped to validation runs for ${activeProject}`}
         actions={
-          <>
-            <Btn variant="secondary"><Download size={13} />Export Log</Btn>
+          <div className="flex gap-2">
+            <Btn variant="secondary" onClick={exportToWord}><FileText size={13} />Word</Btn>
+            <Btn variant="secondary" onClick={exportToExcel}><Download size={13} />Excel</Btn>
             <Btn variant="primary" onClick={openNewForm}>
               <Plus size={13} />Log QA Defect
             </Btn>
-          </>
+          </div>
         }
       />
 
@@ -297,7 +353,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
                 <h2 className="text-lg font-bold text-foreground leading-snug">{selectedDefect.display_title}</h2>
               </div>
 
-              {/* UAT SPECIFIC LAYOUT MATCH */}
               {selectedDefect.source === 'UAT' ? (
                 <>
                   <div className="flex gap-4">
@@ -323,7 +378,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
                   </div>
                 </>
               ) : (
-                /* QA SPECIFIC LAYOUT */
                 <>
                   <div className="bg-muted/30 border border-border/50 p-3 rounded-lg text-xs font-mono font-medium text-foreground">
                     <span className="font-sans font-bold text-muted-foreground uppercase tracking-wider block mb-0.5 text-[10px]">Associated Validation Step Case</span>
@@ -337,7 +391,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
                 </>
               )}
 
-              {/* SHARED STEPS TO REPRODUCE */}
               {selectedDefect.steps_to_reproduce && (
                 <section className="bg-blue-50/20 border border-blue-200 p-4 rounded-lg">
                   <h3 className="text-xs font-bold uppercase text-blue-700 tracking-wider mb-2 flex items-center gap-1"><Play size={12}/> Steps to Reproduce</h3>
@@ -376,7 +429,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 
                 {formData.source === 'UAT' ? (
-                  /* UAT EDIT VIEW: BAs can only update triage states */
                   <div className="bg-amber-50 dark:bg-amber-900/10 p-4 border border-amber-200 dark:border-amber-900/30 rounded-lg space-y-4">
                     <p className="text-xs text-amber-800 dark:text-amber-400 font-bold mb-2">Note: Triage mode only. Original tester inputs (Description, Steps, Environment) cannot be altered to maintain reporting integrity.</p>
                     
@@ -402,7 +454,6 @@ export default function DefectsView({ activeProject }: { activeProject: string }
                     </div>
                   </div>
                 ) : (
-                  /* INTERNAL QA FULL EDIT VIEW */
                   <>
                     <div className="grid grid-cols-4 gap-4">
                       <div className="col-span-1">
