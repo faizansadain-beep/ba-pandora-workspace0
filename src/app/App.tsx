@@ -11,7 +11,7 @@ import {
   Paintbrush, Eye, ClipboardList, Calendar, Award,
   Link2, CheckSquare, GitBranch, Info, Megaphone,
   TestTube, CircuitBoard, HelpCircle, RefreshCcw, ArrowRight,
-  PieChart, ShieldAlert, UserCircle2
+  PieChart, ShieldAlert, UserCircle2, Box
 } from "lucide-react";
 import { cn, Badge } from "./components/SharedUI";
 
@@ -111,6 +111,9 @@ import UatTesterWorkspaceView from "./components/UatTesterWorkspaceView";
 import UatCoordinatorDashboardView from "./components/UatCoordinatorView";
 import UatTesterManagementView from "./components/UatTesterManagementView";
 
+// Sandbox
+import SandboxPlanningView from "./components/SandboxPlanningView";
+
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Theme = "light" | "dark";
 type View = string;
@@ -146,6 +149,7 @@ const NAV_GROUPS = [
     { id: "risks-discovery", label: "Risks", icon: AlertTriangle, badge: null },
   ]},
   { id: "scope-definition", label: "SCOPE DEFINITION", items: [
+    { id: "sandbox-planning", label: "Sandbox Mapping", icon: Box, badge: null },
     { id: "scope", label: "Scope", icon: Target, badge: null },
     { id: "epics", label: "Epics", icon: Layers, badge: null },
     { id: "features", label: "Features", icon: Star, badge: null },
@@ -473,6 +477,7 @@ function renderView(
 ) {
   switch (view) {
     case "dashboard": return <DashboardView activeProject={activeProject} onViewChange={onViewChange} />;
+    case "sandbox-planning": return <SandboxPlanningView activeProject={activeProject} />;
     case "my-tasks": return <MyTasksView activeProject={activeProject} userEmail={userEmail} onViewChange={onViewChange} />;
     case "notifications": return <NotificationsView userEmail={userEmail} onViewChange={onViewChange} />;
     case "calendar": return <CalendarView activeProject={activeProject} onViewChange={onViewChange} />;
