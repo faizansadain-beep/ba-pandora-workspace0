@@ -95,12 +95,23 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
 
   useEffect(() => { fetchData(); }, [activeProject]);
 
+  // 💡 DEEP SEARCH ENABLED HERE
   const filteredData = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    
     return dbSandbox.filter(item => {
-      const matchSearch = searchQuery === "" || item.epic_name.toLowerCase().includes(searchQuery.toLowerCase()) || item.epic_id.toLowerCase().includes(searchQuery.toLowerCase());
+      // Stringify the deep JSON structures to enable universal search across capabilities, rules, scenarios, etc.
+      const matchSearch = query === "" || 
+        (item.epic_name && item.epic_name.toLowerCase().includes(query)) || 
+        (item.epic_id && item.epic_id.toLowerCase().includes(query)) ||
+        (item.module && item.module.toLowerCase().includes(query)) ||
+        (item.business_objective && item.business_objective.toLowerCase().includes(query)) ||
+        (item.features_data && JSON.stringify(item.features_data).toLowerCase().includes(query));
+
       const matchPhase = filterPhase === "All" || item.phase === filterPhase;
       const matchSow = filterSow === "All" || item.sow === filterSow;
       const matchStatus = filterStatus === "All" || item.status === filterStatus;
+      
       return matchSearch && matchPhase && matchSow && matchStatus;
     });
   }, [dbSandbox, searchQuery, filterPhase, filterSow, filterStatus]);
@@ -329,7 +340,6 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
     setActiveScreen('workspace');
   }
 
-  // 💡 NEW: Accept an initialNode parameter to support direct jumping from the tree map
   function openWorkspace(item: any, mode: 'read' | 'edit', initialNode: { type: string, fIdx?: number, sIdx?: number } = { type: 'epic' }) {
     let parsedFeatures = item.features_data;
     if (typeof parsedFeatures === 'string') parsedFeatures = JSON.parse(parsedFeatures);
@@ -712,7 +722,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Purpose / Rationale</label><textarea rows={2} value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].purpose} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'purpose', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" placeholder="Why is this sub-feature being built..." /></div>
                     </div>
 
-                    {/* Dev Traceability Editor */}
+                    {/* Dev Traceability Editor (Date & Time Focus) */}
                     <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-sm">
                       <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400 block mb-4 flex items-center gap-1.5"><Code2 size={14}/> Development & Testing Timeline</span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
