@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Download, FileText, Edit, Trash2, X, Search, Filter, Layers, Box, Cpu, ShieldCheck, Users, Target, Activity, ListTree, ChevronRight, LayoutTemplate, ArrowLeft, Menu, CornerDownRight, Maximize2, Link2, Code2, AlertCircle, Calendar, Clock } from "lucide-react";
+import { Plus, Download, FileText, Edit, Trash2, X, Search, Filter, Layers, Box, Cpu, ShieldCheck, Database, Users, Target, Activity, ListTree, ChevronRight, LayoutTemplate, ArrowLeft, ArrowRight, Menu, CornerDownRight, Maximize2, Link2, Code2, AlertCircle, Calendar, Clock, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
 import * as XLSX from 'xlsx';
@@ -25,25 +25,57 @@ const createEmptySubFeature = () => ({
 });
 
 const createEmptyFeature = () => ({
-  feature_id: genId("FEA"), feature_name: "", description: "", entry_point: "", exit_point: "", 
+  feature_id: genId("FEA"), feature_name: "", description: "", entry_point: "", exit_point: "", status: "Pending Development",
   process_steps: [""],
   sub_features: [createEmptySubFeature()]
 });
+
+// --- HELPER: PROGRESS CALCULATORS ---
+const getEpicProgress = (features: any[]) => {
+  let total = 0; let completed = 0;
+  features?.forEach(f => {
+    f.sub_features?.forEach((s: any) => {
+      total++;
+      if (s.dev_traceability?.status === 'Deployed') completed++;
+    });
+  });
+  return { total, completed };
+};
+
+const getFeatureProgress = (feat: any) => {
+  let total = feat.sub_features?.length || 0;
+  let completed = feat.sub_features?.filter((s:any) => s.dev_traceability?.status === 'Deployed').length || 0;
+  return { total, completed };
+};
+
+// --- HELPER: PROGRESS BAR UI COMPONENT ---
+const ProgressBar = ({ total, completed, label }: { total: number, completed: number, label?: string }) => {
+  if (total === 0) return null;
+  const pct = Math.round((completed / total) * 100);
+  return (
+    <div className="w-full mt-2">
+      {label && <div className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1.5 flex justify-between"><span>{label}</span><span className={pct === 100 ? "text-emerald-500" : "text-primary"}>{completed}/{total} Deployed ({pct}%)</span></div>}
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden flex">
+        <div className={cn("h-full transition-all duration-500", pct === 100 ? "bg-emerald-500" : "bg-primary")} style={{ width: `${pct}%` }} />
+      </div>
+      {!label && <div className="text-[9px] font-bold text-muted-foreground text-right mt-1">{completed}/{total} Deployed ({pct}%)</div>}
+    </div>
+  );
+};
+
 
 export default function SandboxPlanningView({ activeProject }: { activeProject: string }) {
   const [dbSandbox, setDbSandbox] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // View States: 'list' | 'workspace'
+  // View States
   const [activeScreen, setActiveScreen] = useState<'list' | 'workspace'>('list');
   const [workspaceMode, setWorkspaceMode] = useState<'read' | 'edit'>('read');
   const [formData, setFormData] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // List View Inline Expansion State
+  // Layout States
   const [expandedListId, setExpandedListId] = useState<string | null>(null);
-
-  // Split-Screen Layout States
   const [selectedNode, setSelectedNode] = useState<{ type: string, fIdx?: number, sIdx?: number }>({ type: 'epic' });
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
@@ -76,7 +108,6 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
   // --- DEEP EXPORTS ---
   const exportToExcel = () => {
     if (filteredData.length === 0) return alert("No data to export.");
-    
     const exportData: any[] = [];
 
     filteredData.forEach(epic => {
@@ -91,7 +122,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
           if (!feat.sub_features || feat.sub_features.length === 0) {
             exportData.push({
               "Epic ID": epic.epic_id, "Epic Name": epic.epic_name, "Module": epic.module, "Phase": epic.phase,
-              "Feature ID": feat.feature_id, "Feature Name": feat.feature_name, "Entry Point": feat.entry_point, "Process Steps": feat.process_steps?.filter((s:any)=>s).join(" -> ") || ""
+              "Feature ID": feat.feature_id, "Feature Name": feat.feature_name, "Feature Status": feat.status || "Pending Development", "Process Steps": feat.process_steps?.filter((s:any)=>s).join(" -> ") || ""
             });
           } else {
             feat.sub_features.forEach((sub: any) => {
@@ -102,7 +133,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 "Module": epic.module,
                 "Feature ID": feat.feature_id,
                 "Feature Name": feat.feature_name,
-                "Process Steps": feat.process_steps?.filter((s:any)=>s).join(" -> ") || "",
+                "Feature Status": feat.status || "Pending Development",
                 "Sub-Feature": sub.name,
                 "Dependencies": sub.dependencies?.filter((d:any)=>d).join("\n") || "",
                 "Capabilities": sub.capabilities?.filter((c:any)=>c.id||c.name).map((c:any) => `[${c.id}] ${c.name}`).join("\n") || "",
@@ -113,7 +144,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 "When (AC)": sub.acceptance_criteria?.when || "",
                 "Then (AC)": sub.acceptance_criteria?.then || "",
                 "UAT Scenarios": sub.uat_scenarios?.filter((u:any)=>u.id||u.test).map((u:any) => `[${u.id}] ${u.test}`).join("\n") || "",
-                "Dev Status": sub.dev_traceability?.status || "",
+                "Sub-Feature Dev Status": sub.dev_traceability?.status || "",
                 "Due Date": sub.dev_traceability?.due_date || "",
                 "Tested On": testedAt || ""
               });
@@ -146,7 +177,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
       
       if (features.length > 0) {
         features.forEach((feat: any) => {
-          html += `<h3 style='color: #2563eb;'>Feature: [${feat.feature_id || "ID"}] ${feat.feature_name || "Unnamed"}</h3>`;
+          html += `<h3 style='color: #2563eb;'>Feature: [${feat.feature_id || "ID"}] ${feat.feature_name || "Unnamed"} (Status: ${feat.status || "Pending"})</h3>`;
           html += `<p><i>${feat.description || "No description provided."}</i></p>`;
           html += `<p><b>Entry:</b> ${feat.entry_point || "-"} | <b>Exit:</b> ${feat.exit_point || "-"}</p>`;
           
@@ -219,12 +250,49 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
     document.body.removeChild(link);
   };
 
-  // --- CRUD & WORKSPACE NAVIGATION ---
+  // --- CRUD & AUTO-ROLLUP LOGIC ---
   async function handleSave() {
     setIsSubmitting(true);
-    const payload = { ...formData, project_name: activeProject };
-    let error;
 
+    let totalEpicSubs = 0;
+    let deployedEpicSubs = 0;
+
+    const evaluatedFeatures = formData.features_data.map((feat: any) => {
+      let featTotalSubs = feat.sub_features?.length || 0;
+      let featDeployedSubs = 0;
+
+      feat.sub_features?.forEach((sub: any) => {
+        totalEpicSubs++;
+        if (sub.dev_traceability?.status === 'Deployed') {
+          featDeployedSubs++;
+          deployedEpicSubs++;
+        }
+      });
+
+      if (featTotalSubs > 0 && featDeployedSubs === featTotalSubs) feat.status = "Ready for Release";
+      else if (featDeployedSubs > 0) feat.status = "In Progress";
+      else feat.status = "Pending Development";
+
+      return feat;
+    });
+
+    let finalEpicStatus = formData.status;
+    if (totalEpicSubs > 0 && deployedEpicSubs === totalEpicSubs) {
+      finalEpicStatus = "Delivered";
+    } else if (deployedEpicSubs > 0 && (finalEpicStatus === "Draft" || finalEpicStatus === "Approved")) {
+      finalEpicStatus = "In Progress"; 
+    } else if (finalEpicStatus === "Delivered" && deployedEpicSubs < totalEpicSubs) {
+      finalEpicStatus = "In Progress"; 
+    }
+
+    const payload = { 
+      ...formData, 
+      project_name: activeProject,
+      features_data: evaluatedFeatures,
+      status: finalEpicStatus
+    };
+
+    let error;
     if (formData.id) {
       const res = await supabase.from('sandbox_planning').update(payload).eq('id', formData.id);
       error = res.error;
@@ -237,6 +305,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
       alert(`Error saving: ${error.message}`);
     } else {
       await fetchData();
+      setFormData(payload); 
       setWorkspaceMode('read');
     }
     setIsSubmitting(false);
@@ -260,50 +329,38 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
     setActiveScreen('workspace');
   }
 
-  function openWorkspace(item: any, mode: 'read' | 'edit') {
+  // 💡 NEW: Accept an initialNode parameter to support direct jumping from the tree map
+  function openWorkspace(item: any, mode: 'read' | 'edit', initialNode: { type: string, fIdx?: number, sIdx?: number } = { type: 'epic' }) {
     let parsedFeatures = item.features_data;
     if (typeof parsedFeatures === 'string') parsedFeatures = JSON.parse(parsedFeatures);
     if (!parsedFeatures || parsedFeatures.length === 0) parsedFeatures = [createEmptyFeature()];
 
-    // MIGRATION SCRIPT: Handle legacy arrays, missing schemas, and old DB fields
     parsedFeatures = parsedFeatures.map((f: any) => {
-      if (!f.process_steps) {
-        f.process_steps = f.business_process ? f.business_process.split('->').map((s: string) => s.trim()).filter(Boolean) : [""];
-      }
+      if (!f.status) f.status = "Pending Development";
+      if (!f.process_steps) f.process_steps = f.business_process ? f.business_process.split('->').map((s: string) => s.trim()).filter(Boolean) : [""];
       if (f.process_steps.length === 0) f.process_steps = [""];
       
       f.sub_features = f.sub_features?.map((sub: any) => {
-        if (typeof sub.acceptance_criteria === 'string') {
-          sub.acceptance_criteria = { given: sub.acceptance_criteria, when: "", then: "" };
-        }
+        if (typeof sub.acceptance_criteria === 'string') sub.acceptance_criteria = { given: sub.acceptance_criteria, when: "", then: "" };
         if (!sub.acceptance_criteria) sub.acceptance_criteria = { given: "", when: "", then: "" };
-        
-        // Migrate dev_traceability to dates format
-        if (!sub.dev_traceability) {
-          sub.dev_traceability = { due_date: "", tested_date: "", tested_time: "", status: "Pending Development" };
-        } else {
-          // If it has old jira ticket fields, just ensure the new fields exist
+        if (!sub.dev_traceability) sub.dev_traceability = { due_date: "", tested_date: "", tested_time: "", status: "Pending Development" };
+        else {
           if (sub.dev_traceability.due_date === undefined) sub.dev_traceability.due_date = "";
           if (sub.dev_traceability.tested_date === undefined) sub.dev_traceability.tested_date = "";
           if (sub.dev_traceability.tested_time === undefined) sub.dev_traceability.tested_time = "";
           if (!sub.dev_traceability.status) sub.dev_traceability.status = "Pending Development";
         }
-
         if (!sub.dependencies) sub.dependencies = [""];
         if (!sub.validation_rules) sub.validation_rules = [""];
-        // Clean out database and apis properties
-        delete sub.database;
-        delete sub.apis;
-        
+        delete sub.database; delete sub.apis; 
         return sub;
       });
-
       return f;
     });
 
     setFormData({ ...item, features_data: parsedFeatures });
     setWorkspaceMode(mode);
-    setSelectedNode({ type: 'epic' });
+    setSelectedNode(initialNode);
     setActiveScreen('workspace');
   }
 
@@ -347,7 +404,6 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
     setFormData({ ...formData, features_data: updated });
   };
 
-  // Dedicated handlers for nested objects (AC & Dev Traceability)
   const updateSubFeatureNested = (fIdx: number, sIdx: number, objectKey: 'acceptance_criteria' | 'dev_traceability', field: string, value: string) => {
     const updated = [...formData.features_data];
     if (!updated[fIdx].sub_features[sIdx][objectKey]) {
@@ -383,6 +439,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
   if (activeScreen === 'workspace' && formData) {
     const isEdit = workspaceMode === 'edit';
     const features = formData.features_data || [];
+    const epicMetrics = getEpicProgress(features);
 
     return (
       <div className="h-[calc(100vh-4rem)] flex flex-col bg-background relative overflow-hidden">
@@ -400,8 +457,8 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
             {isEdit ? (
               <>
                 <Btn variant="secondary" onClick={() => setWorkspaceMode('read')} className="hidden sm:flex">Cancel</Btn>
-                <button onClick={handleSave} disabled={isSubmitting} className="px-4 py-1.5 bg-primary text-primary-foreground text-sm font-medium rounded-md shadow-sm disabled:opacity-50">
-                  {isSubmitting ? "Saving..." : "Save Matrix"}
+                <button onClick={handleSave} disabled={isSubmitting} className="px-4 py-1.5 bg-primary text-primary-foreground text-sm font-medium rounded-md shadow-sm disabled:opacity-50 flex items-center gap-2">
+                  {isSubmitting ? "Saving..." : <><CheckCircle2 size={14}/> Save Matrix</>}
                 </button>
               </>
             ) : (
@@ -430,49 +487,64 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
               <button onClick={() => setShowMobileSidebar(false)} className="md:hidden p-1 hover:text-foreground"><X size={14}/></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-card md:bg-transparent">
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-card md:bg-transparent pb-10">
+              
+              {/* Epic Root Node */}
               <button 
                 onClick={() => { setSelectedNode({ type: 'epic' }); setShowMobileSidebar(false); }}
-                className={cn("w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-sm transition-colors", selectedNode.type === 'epic' ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-900 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800" : "hover:bg-muted border border-transparent")}
+                className={cn("w-full flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-colors", selectedNode.type === 'epic' ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-900 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800" : "hover:bg-muted border border-transparent")}
               >
-                <Layers size={16} className={selectedNode.type === 'epic' ? "text-indigo-600" : "text-muted-foreground"}/>
-                <span className="truncate flex-1">{formData.epic_name || "Epic Details"}</span>
+                <div className="flex items-center gap-2 w-full">
+                  <Layers size={16} className={selectedNode.type === 'epic' ? "text-indigo-600 shrink-0" : "text-muted-foreground shrink-0"}/>
+                  <span className="truncate flex-1 text-sm">{formData.epic_name || "Epic Details"}</span>
+                </div>
+                <ProgressBar total={epicMetrics.total} completed={epicMetrics.completed} />
               </button>
 
               <div className="pl-4 mt-2 space-y-1.5 border-l-2 border-muted">
-                {features.map((feat: any, fIdx: number) => (
-                  <div key={fIdx}>
-                    <button 
-                      onClick={() => { setSelectedNode({ type: 'feature', fIdx }); setShowMobileSidebar(false); }}
-                      className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors", selectedNode.type === 'feature' && selectedNode.fIdx === fIdx ? "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800" : "hover:bg-muted border border-transparent")}
-                    >
-                      <Box size={14} className={selectedNode.type === 'feature' && selectedNode.fIdx === fIdx ? "text-blue-600" : "text-muted-foreground"}/>
-                      <span className="truncate flex-1 text-xs">{feat.feature_name || `Feature ${fIdx+1}`}</span>
-                    </button>
-                    
-                    <div className="pl-6 mt-1 space-y-1">
-                      {feat.sub_features?.map((sub: any, sIdx: number) => (
-                        <button 
-                          key={sIdx}
-                          onClick={() => { setSelectedNode({ type: 'subfeature', fIdx, sIdx }); setShowMobileSidebar(false); }}
-                          className={cn("w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-xs transition-colors border", selectedNode.type === 'subfeature' && selectedNode.fIdx === fIdx && selectedNode.sIdx === sIdx ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-300 font-bold border-emerald-200 dark:border-emerald-800" : "hover:bg-muted text-muted-foreground border-transparent")}
-                        >
-                          <Cpu size={12} className={selectedNode.type === 'subfeature' && selectedNode.fIdx === fIdx && selectedNode.sIdx === sIdx ? "text-emerald-600" : "text-muted-foreground/50"}/>
-                          <span className="truncate flex-1">{sub.name || `Sub ${sIdx+1}`}</span>
-                        </button>
-                      ))}
+                {features.map((feat: any, fIdx: number) => {
+                  const featMetrics = getFeatureProgress(feat);
+                  return (
+                    <div key={fIdx}>
+                      <button 
+                        onClick={() => { setSelectedNode({ type: 'feature', fIdx }); setShowMobileSidebar(false); }}
+                        className={cn("w-full flex flex-col items-start gap-1 px-3 py-2 rounded-lg text-left transition-colors", selectedNode.type === 'feature' && selectedNode.fIdx === fIdx ? "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800" : "hover:bg-muted border border-transparent")}
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <Box size={14} className={selectedNode.type === 'feature' && selectedNode.fIdx === fIdx ? "text-blue-600 shrink-0" : "text-muted-foreground shrink-0"}/>
+                          <span className="truncate flex-1 text-xs">{feat.feature_name || `Feature ${fIdx+1}`}</span>
+                        </div>
+                        <ProgressBar total={featMetrics.total} completed={featMetrics.completed} />
+                      </button>
                       
-                      {isEdit && (
-                        <button 
-                          onClick={() => { const updated = [...features]; updated[fIdx].sub_features.push(createEmptySubFeature()); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'subfeature', fIdx, sIdx: updated[fIdx].sub_features.length - 1 }); }}
-                          className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-md text-left text-[10px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors mt-1"
-                        >
-                          <Plus size={10}/> Add Sub-Feature
-                        </button>
-                      )}
+                      <div className="pl-6 mt-1 space-y-1">
+                        {feat.sub_features?.map((sub: any, sIdx: number) => {
+                          const isSubDeployed = sub.dev_traceability?.status === 'Deployed';
+                          return (
+                            <button 
+                              key={sIdx}
+                              onClick={() => { setSelectedNode({ type: 'subfeature', fIdx, sIdx }); setShowMobileSidebar(false); }}
+                              className={cn("w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-xs transition-colors border", selectedNode.type === 'subfeature' && selectedNode.fIdx === fIdx && selectedNode.sIdx === sIdx ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-300 font-bold border-emerald-200 dark:border-emerald-800" : "hover:bg-muted text-muted-foreground border-transparent")}
+                            >
+                              <Cpu size={12} className={cn("shrink-0", selectedNode.type === 'subfeature' && selectedNode.fIdx === fIdx && selectedNode.sIdx === sIdx ? "text-emerald-600" : "text-muted-foreground/50")}/>
+                              <span className={cn("truncate flex-1", isSubDeployed && "text-emerald-600 font-bold")}>{sub.name || `Sub ${sIdx+1}`}</span>
+                              {isSubDeployed && <CheckCircle2 size={10} className="text-emerald-500 shrink-0"/>}
+                            </button>
+                          )
+                        })}
+                        
+                        {isEdit && (
+                          <button 
+                            onClick={() => { const updated = [...features]; updated[fIdx].sub_features.push(createEmptySubFeature()); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'subfeature', fIdx, sIdx: updated[fIdx].sub_features.length - 1 }); }}
+                            className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-md text-left text-[10px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors mt-1"
+                          >
+                            <Plus size={10}/> Add Sub-Feature
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
 
                 {isEdit && (
                   <button 
@@ -491,7 +563,14 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
             {/* EPIC NODE */}
             {selectedNode.type === 'epic' && (
               <div className="max-w-6xl mx-auto p-4 md:p-8 animate-fade-in space-y-6">
-                <div className="flex items-center gap-2 mb-6 text-indigo-600"><Layers size={24}/> <h2 className="text-xl md:text-2xl font-black">Epic Configuration</h2></div>
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-2 text-indigo-600">
+                    <Layers size={24}/> <h2 className="text-xl md:text-2xl font-black">Epic Configuration</h2>
+                  </div>
+                  <div className="w-full md:w-64">
+                    <ProgressBar total={epicMetrics.total} completed={epicMetrics.completed} label="Epic Progress Rollup" />
+                  </div>
+                </div>
                 
                 {isEdit ? (
                   <div className="space-y-6">
@@ -503,7 +582,14 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Module</label><input value={formData.module} onChange={e => updateEpic('module', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" /></div>
                       <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">SOW</label><input value={formData.sow} onChange={e => updateEpic('sow', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" /></div>
                       <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Phase</label><input value={formData.phase} onChange={e => updateEpic('phase', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" /></div>
-                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Status</label><select value={formData.status} onChange={e => updateEpic('status', e.target.value)} className="w-full px-3 py-2 text-sm border rounded"><option>Draft</option><option>In Review</option><option>Approved</option><option>Delivered</option></select></div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-primary flex justify-between items-center mb-1">
+                          Status <span className="text-[8px] font-normal text-muted-foreground normal-case">(Auto-calculates on save)</span>
+                        </label>
+                        <select value={formData.status} onChange={e => updateEpic('status', e.target.value)} className="w-full px-3 py-2 text-sm border border-primary/20 bg-primary/5 rounded font-bold text-primary">
+                          <option>Draft</option><option>In Review</option><option>Approved</option><option>In Progress</option><option>Delivered</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Business Objective</label><textarea rows={4} value={formData.business_objective} onChange={e => updateEpic('business_objective', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" /></div>
@@ -516,7 +602,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       <div><span className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Module</span><div className="text-sm font-medium">{formData.module || "-"}</div></div>
                       <div><span className="text-[10px] font-black text-muted-foreground uppercase block mb-1">SOW</span><div className="text-sm font-medium">{formData.sow || "-"}</div></div>
                       <div><span className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Phase</span><div className="text-sm font-medium">{formData.phase || "-"}</div></div>
-                      <div><span className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Status</span><Badge>{formData.status}</Badge></div>
+                      <div><span className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Epic Status</span><Badge className={cn(formData.status === 'Delivered' && "bg-emerald-100 text-emerald-800", formData.status === 'In Progress' && "bg-blue-100 text-blue-800")}>{formData.status}</Badge></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="border p-5 rounded-xl bg-card shadow-sm"><span className="text-[10px] font-black text-muted-foreground uppercase block mb-2">Business Objective</span><p className="text-sm leading-relaxed">{formData.business_objective || "Not defined"}</p></div>
@@ -530,9 +616,14 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
             {/* FEATURE NODE */}
             {selectedNode.type === 'feature' && selectedNode.fIdx !== undefined && (
               <div className="max-w-6xl mx-auto p-4 md:p-8 animate-fade-in space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
                   <div className="flex items-center gap-2 text-blue-600"><Box size={24}/> <h2 className="text-xl md:text-2xl font-black">Feature Definition</h2></div>
-                  {isEdit && <button onClick={() => { const updated = [...features]; updated.splice(selectedNode.fIdx!, 1); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'epic' }); }} className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 self-start sm:self-auto"><Trash2 size={12}/> Delete Feature</button>}
+                  <div className="flex items-center gap-6 w-full md:w-auto">
+                    <div className="w-full md:w-64">
+                      <ProgressBar total={getFeatureProgress(features[selectedNode.fIdx]).total} completed={getFeatureProgress(features[selectedNode.fIdx]).completed} label="Feature Progress Rollup" />
+                    </div>
+                    {isEdit && <button onClick={() => { const updated = [...features]; updated.splice(selectedNode.fIdx!, 1); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'epic' }); }} className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 shrink-0 mt-3 md:mt-0"><Trash2 size={12}/> Delete Feature</button>}
+                  </div>
                 </div>
 
                 {isEdit ? (
@@ -567,7 +658,13 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 ) : (
                   <div className="space-y-6">
                     <div className="border-b pb-6">
-                      <Badge className="font-mono mb-3 bg-blue-50 text-blue-700 border-none px-2 py-1">{features[selectedNode.fIdx].feature_id || "No ID"}</Badge>
+                      <div className="flex items-center gap-3 mb-3">
+                        <Badge className="font-mono bg-blue-50 text-blue-700 border-none px-2 py-1">{features[selectedNode.fIdx].feature_id || "No ID"}</Badge>
+                        <Badge className={cn("px-2 py-1 border-none", 
+                          features[selectedNode.fIdx].status === 'Ready for Release' ? 'bg-emerald-100 text-emerald-800' :
+                          features[selectedNode.fIdx].status === 'In Progress' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'
+                        )}>{features[selectedNode.fIdx].status || "Pending Development"}</Badge>
+                      </div>
                       <h3 className="text-2xl md:text-3xl font-bold">{features[selectedNode.fIdx].feature_name || "Unnamed Feature"}</h3>
                       <p className="text-base text-muted-foreground mt-3 max-w-3xl leading-relaxed">{features[selectedNode.fIdx].description || "No description provided."}</p>
                     </div>
@@ -611,16 +708,17 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 {isEdit ? (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 gap-4">
-                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Sub-Feature Name</label><input value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'name', e.target.value)} className="w-full px-3 py-2 text-sm border rounded font-bold" /></div>
-                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Purpose</label><textarea rows={2} value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].purpose} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'purpose', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" /></div>
+                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Sub-Feature Name</label><input value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'name', e.target.value)} className="w-full px-3 py-2 text-base border rounded font-bold" placeholder="E.g. OAuth Flow Integration" /></div>
+                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Purpose / Rationale</label><textarea rows={2} value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].purpose} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'purpose', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" placeholder="Why is this sub-feature being built..." /></div>
                     </div>
 
-                    {/* NEW: Dev Traceability Editor (Date & Time Focus) */}
+                    {/* Dev Traceability Editor */}
                     <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-sm">
                       <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400 block mb-4 flex items-center gap-1.5"><Code2 size={14}/> Development & Testing Timeline</span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                        <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Dev Status</label>
-                          <select value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].dev_traceability?.status} onChange={e => updateSubFeatureNested(selectedNode.fIdx!, selectedNode.sIdx!, 'dev_traceability', 'status', e.target.value)} className="w-full px-3 py-2 text-sm border rounded bg-background">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-primary flex justify-between items-center mb-1">Status <span className="text-[8px] font-normal text-muted-foreground normal-case">(Rolls up to Epic)</span></label>
+                          <select value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].dev_traceability?.status} onChange={e => updateSubFeatureNested(selectedNode.fIdx!, selectedNode.sIdx!, 'dev_traceability', 'status', e.target.value)} className="w-full px-3 py-2 text-sm border border-primary/20 bg-primary/5 text-primary font-bold rounded">
                             <option>Pending Development</option><option>In Progress</option><option>In QA / Review</option><option>Ready for Release</option><option>Deployed</option>
                           </select>
                         </div>
@@ -659,9 +757,9 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       </div>
 
                       {/* Capabilities */}
-                      <div className="bg-card border shadow-sm p-4 rounded-xl">
+                      <div className="bg-card border shadow-sm p-4 rounded-xl xl:col-span-2">
                         <div className="flex justify-between items-center mb-3"><label className="text-[10px] font-black uppercase text-muted-foreground">Capabilities</label><button type="button" onClick={() => addArrayItem(selectedNode.fIdx!, selectedNode.sIdx!, 'capabilities', createEmptyCapability())} className="text-[10px] text-primary font-bold flex items-center gap-1"><Plus size={10}/> Add</button></div>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {features[selectedNode.fIdx].sub_features[selectedNode.sIdx].capabilities?.map((c:any, i:number) => (
                             <div key={i} className="flex gap-2 group">
                               <input value={c.id} onChange={e => updateArrayItem(selectedNode.fIdx!, selectedNode.sIdx!, 'capabilities', i, 'id', e.target.value)} placeholder="ID" className="w-20 md:w-24 px-2 py-1.5 text-xs border rounded font-mono font-bold text-muted-foreground"/>
@@ -687,7 +785,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       </div>
 
                       {/* Functional Reqs */}
-                      <div className="bg-emerald-50/30 dark:bg-emerald-900/10 border border-emerald-200/50 shadow-sm p-4 rounded-xl xl:col-span-2">
+                      <div className="bg-emerald-50/30 dark:bg-emerald-900/10 border border-emerald-200/50 shadow-sm p-4 rounded-xl">
                         <div className="flex justify-between items-center mb-3"><label className="text-[10px] font-black uppercase text-emerald-600 flex items-center gap-1"><ShieldCheck size={12}/> Functional Requirements</label><button type="button" onClick={() => addArrayItem(selectedNode.fIdx!, selectedNode.sIdx!, 'functional_reqs', createEmptyReq())} className="text-[10px] text-emerald-600 font-bold flex items-center gap-1"><Plus size={10}/> Add</button></div>
                         <div className="space-y-2">
                           {features[selectedNode.fIdx].sub_features[selectedNode.sIdx].functional_reqs?.map((r:any, i:number) => (
@@ -722,7 +820,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       {/* UAT Scenarios */}
                       <div className="bg-purple-50/30 dark:bg-purple-900/10 border border-purple-200/50 shadow-sm p-4 rounded-xl col-span-1 xl:col-span-2">
                         <div className="flex justify-between items-center mb-3"><label className="text-[10px] font-black uppercase text-purple-600">UAT Scenarios</label><button type="button" onClick={() => addArrayItem(selectedNode.fIdx!, selectedNode.sIdx!, 'uat_scenarios', createEmptyUat())} className="text-[10px] text-purple-600 font-bold flex items-center gap-1"><Plus size={10}/> Add</button></div>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {features[selectedNode.fIdx].sub_features[selectedNode.sIdx].uat_scenarios?.map((u:any, i:number) => (
                             <div key={i} className="flex gap-2 group">
                               <input value={u.id} onChange={e => updateArrayItem(selectedNode.fIdx!, selectedNode.sIdx!, 'uat_scenarios', i, 'id', e.target.value)} placeholder="ID" className="w-20 md:w-24 px-2 py-1.5 text-xs border border-purple-200 bg-purple-50 font-mono font-bold text-purple-700 rounded"/>
@@ -813,15 +911,15 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                         <div className="space-y-4">
                           <div className="bg-white dark:bg-black border border-blue-100 dark:border-blue-900 p-4 rounded-lg">
                             <Badge className="bg-blue-100 text-blue-800 border-none px-2 mb-2 text-[9px] font-black">GIVEN</Badge>
-                            <p className="text-sm font-medium text-foreground">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.given || "-"}</p>
+                            <p className="text-sm font-medium text-foreground whitespace-pre-wrap">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.given || "-"}</p>
                           </div>
                           <div className="bg-white dark:bg-black border border-blue-100 dark:border-blue-900 p-4 rounded-lg">
                             <Badge className="bg-blue-100 text-blue-800 border-none px-2 mb-2 text-[9px] font-black">WHEN</Badge>
-                            <p className="text-sm font-medium text-foreground">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.when || "-"}</p>
+                            <p className="text-sm font-medium text-foreground whitespace-pre-wrap">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.when || "-"}</p>
                           </div>
                           <div className="bg-white dark:bg-black border border-blue-100 dark:border-blue-900 p-4 rounded-lg">
                             <Badge className="bg-blue-100 text-blue-800 border-none px-2 mb-2 text-[9px] font-black">THEN</Badge>
-                            <p className="text-sm font-medium text-foreground">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.then || "-"}</p>
+                            <p className="text-sm font-medium text-foreground whitespace-pre-wrap">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].acceptance_criteria?.then || "-"}</p>
                           </div>
                         </div>
                       </div>
@@ -885,7 +983,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
             <div>
               <label className="block text-[10px] font-black uppercase text-muted-foreground mb-1">Status</label>
               <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-border rounded-md">
-                <option value="All">All Statuses</option><option>Draft</option><option>In Review</option><option>Approved</option><option>Delivered</option>
+                <option value="All">All Statuses</option><option>Draft</option><option>In Review</option><option>Approved</option><option>In Progress</option><option>Delivered</option>
               </select>
             </div>
           </div>
@@ -906,6 +1004,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
           <div className="divide-y divide-border">
             {filteredData.map(item => {
               const parsedFeatures = typeof item.features_data === 'string' ? JSON.parse(item.features_data) : (item.features_data || []);
+              const epicMetrics = getEpicProgress(parsedFeatures);
               
               return (
                 <div key={item.id} className="flex flex-col border-b last:border-0 group">
@@ -915,15 +1014,18 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                     onClick={() => setExpandedListId(prev => prev === item.id ? null : item.id)}
                     className="p-4 hover:bg-muted/30 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors"
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-lg shrink-0"><LayoutTemplate size={20}/></div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="text-xs font-mono font-bold">{item.epic_id}</span>
                           <Badge className="bg-muted text-muted-foreground text-[9px] border-none px-1.5">{item.module || "No Module"}</Badge>
-                          <Badge className={cn("text-[9px] border-none px-1.5", item.status === 'Delivered' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700')}>{item.status}</Badge>
+                          <Badge className={cn("text-[9px] border-none px-1.5", item.status === 'Delivered' ? 'bg-emerald-100 text-emerald-700' : item.status === 'In Progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700')}>{item.status}</Badge>
                         </div>
                         <h4 className="text-sm font-bold text-foreground truncate">{item.epic_name || "Untitled Epic"}</h4>
+                        <div className="max-w-xs sm:max-w-sm md:max-w-md">
+                          <ProgressBar total={epicMetrics.total} completed={epicMetrics.completed} />
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-6 shrink-0 border-t sm:border-0 pt-3 sm:pt-0 border-border/50">
@@ -946,47 +1048,69 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                       {parsedFeatures.length === 0 ? (
                         <div className="text-xs text-muted-foreground italic">No features mapped yet.</div>
                       ) : (
-                        parsedFeatures.map((feat: any, fIdx: number) => (
-                          <div key={fIdx} className="bg-card border rounded-lg p-3 shadow-sm">
-                            <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                              <Box size={14} className="text-blue-500" /> 
-                              <span className="font-mono text-muted-foreground text-xs">{feat.feature_id || "ID"}</span>
-                              {feat.feature_name || "Unnamed Feature"}
-                            </div>
-                            
-                            {feat.sub_features?.length > 0 && (
-                              <div className="pl-4 border-l-2 border-border/50 ml-1.5 mt-2 space-y-2">
-                                {feat.sub_features.map((sub: any, sIdx: number) => {
-                                  const capsCount = sub.capabilities?.filter((c:any)=>c.id||c.name).length || 0;
-                                  const rulesCount = sub.business_rules?.filter((r:any)=>r.id||r.rule).length || 0;
-                                  const reqsCount = sub.functional_reqs?.filter((r:any)=>r.id||r.req).length || 0;
-                                  const uatCount = sub.uat_scenarios?.filter((u:any)=>u.id||u.test).length || 0;
-                                  const devStatus = sub.dev_traceability?.status || "Pending Development";
-
-                                  return (
-                                    <div key={sIdx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                                      <div className="flex items-center gap-2 text-muted-foreground font-medium flex-wrap">
-                                        <CornerDownRight size={12} className="text-muted-foreground/50"/>
-                                        <Cpu size={12} className="text-emerald-500"/>
-                                        <span className="text-foreground font-bold">{sub.name || "Unnamed Sub-feature"}</span>
-                                        <Badge className={cn("text-[9px] px-1.5 py-0 border-none", 
-                                          devStatus === 'Deployed' ? 'bg-emerald-100 text-emerald-700' :
-                                          devStatus === 'Pending Development' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'
-                                        )}>{devStatus}</Badge>
-                                      </div>
-                                      <div className="flex items-center gap-2 ml-7 sm:ml-0 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
-                                        {capsCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-slate-100 text-slate-600 border-none">{capsCount} Capabilities</Badge>}
-                                        {rulesCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-amber-50 text-amber-600 border-none">{rulesCount} Rules</Badge>}
-                                        {reqsCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-emerald-50 text-emerald-600 border-none">{reqsCount} Reqs</Badge>}
-                                        {uatCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-purple-50 text-purple-600 border-none">{uatCount} Tests</Badge>}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                        parsedFeatures.map((feat: any, fIdx: number) => {
+                          const fMetrics = getFeatureProgress(feat);
+                          return (
+                            <div key={fIdx} className="bg-card border rounded-lg p-4 shadow-sm mb-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                                  <Box size={14} className="text-blue-500" /> 
+                                  <span className="font-mono text-muted-foreground text-xs">{feat.feature_id || "ID"}</span>
+                                  {feat.feature_name || "Unnamed Feature"}
+                                </div>
+                                <div className="flex items-center gap-4 w-full sm:w-auto">
+                                  <div className="w-full sm:w-48">
+                                    <ProgressBar total={fMetrics.total} completed={fMetrics.completed} />
+                                  </div>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); openWorkspace(item, 'read', { type: 'feature', fIdx }); }}
+                                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded transition-colors shrink-0"
+                                  >
+                                    Go To <ArrowRight size={10}/>
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        ))
+                              
+                              {feat.sub_features?.length > 0 && (
+                                <div className="pl-4 border-l-2 border-border/50 ml-1.5 mt-2 space-y-1">
+                                  {feat.sub_features.map((sub: any, sIdx: number) => {
+                                    const capsCount = sub.capabilities?.filter((c:any)=>c.id||c.name).length || 0;
+                                    const rulesCount = sub.business_rules?.filter((r:any)=>r.id||r.rule).length || 0;
+                                    const reqsCount = sub.functional_reqs?.filter((r:any)=>r.id||r.req).length || 0;
+                                    const uatCount = sub.uat_scenarios?.filter((u:any)=>u.id||u.test).length || 0;
+                                    const devStatus = sub.dev_traceability?.status || "Pending Development";
+
+                                    return (
+                                      <div key={sIdx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs group p-1.5 -mx-1.5 rounded-md hover:bg-muted/40 transition-colors">
+                                        <div className="flex items-center gap-2 text-muted-foreground font-medium flex-wrap">
+                                          <CornerDownRight size={12} className="text-muted-foreground/50"/>
+                                          <Cpu size={12} className={devStatus === 'Deployed' ? "text-emerald-500" : "text-slate-400"}/>
+                                          <span className={cn(devStatus === 'Deployed' ? "text-emerald-700 font-bold" : "text-foreground")}>{sub.name || "Unnamed Sub-feature"}</span>
+                                          <Badge className={cn("text-[9px] px-1.5 py-0 border-none", 
+                                            devStatus === 'Deployed' ? 'bg-emerald-100 text-emerald-700' :
+                                            devStatus === 'Pending Development' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'
+                                          )}>{devStatus}</Badge>
+                                          <button 
+                                            onClick={(e) => { e.stopPropagation(); openWorkspace(item, 'read', { type: 'subfeature', fIdx, sIdx }); }}
+                                            className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded transition-all opacity-0 group-hover:opacity-100 ml-1"
+                                          >
+                                            Go To <ArrowRight size={10}/>
+                                          </button>
+                                        </div>
+                                        <div className="flex items-center gap-2 ml-7 sm:ml-0 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
+                                          {capsCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-slate-100 text-slate-600 border-none">{capsCount} Capabilities</Badge>}
+                                          {rulesCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-amber-50 text-amber-600 border-none">{rulesCount} Rules</Badge>}
+                                          {reqsCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-emerald-50 text-emerald-600 border-none">{reqsCount} Reqs</Badge>}
+                                          {uatCount > 0 && <Badge className="text-[9px] px-1 py-0 bg-purple-50 text-purple-600 border-none">{uatCount} Tests</Badge>}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                       
                       <div className="pt-2 flex justify-end">
