@@ -145,7 +145,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 "Feature ID": feat.feature_id,
                 "Feature Name": feat.feature_name,
                 "Feature Status": feat.status || "Pending Development",
-                "Sub-Feature": sub.name,
+                "Story": sub.name,
                 "Dependencies": sub.dependencies?.filter((d:any)=>d).join("\n") || "",
                 "Capabilities": sub.capabilities?.filter((c:any)=>c.id||c.name).map((c:any) => `[${c.id}] ${c.name}`).join("\n") || "",
                 "Business Rules": sub.business_rules?.filter((r:any)=>r.id||r.rule).map((r:any) => `[${r.id}] ${r.rule}`).join("\n") || "",
@@ -155,7 +155,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                 "When (AC)": sub.acceptance_criteria?.when || "",
                 "Then (AC)": sub.acceptance_criteria?.then || "",
                 "UAT Scenarios": sub.uat_scenarios?.filter((u:any)=>u.id||u.test).map((u:any) => `[${u.id}] ${u.test}`).join("\n") || "",
-                "Sub-Feature Dev Status": sub.dev_traceability?.status || "",
+                "Story Dev Status": sub.dev_traceability?.status || "",
                 "Due Date": sub.dev_traceability?.due_date || "",
                 "Tested On": testedAt || ""
               });
@@ -199,7 +199,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
           if (feat.sub_features && feat.sub_features.length > 0) {
             feat.sub_features.forEach((sub: any) => {
               html += `<div style='margin-left: 20px; border-left: 2px solid #10b981; padding-left: 15px; margin-bottom: 20px;'>`;
-              html += `<h4 style='color: #059669; margin-bottom: 5px;'>Sub-Feature: ${sub.name || "Unnamed"}</h4>`;
+              html += `<h4 style='color: #059669; margin-bottom: 5px;'>Story: ${sub.name || "Unnamed"}</h4>`;
               
               if (sub.dependencies?.filter((d:any)=>d).length > 0) {
                 html += `<p><b>Dependencies:</b> ${sub.dependencies.filter((d:any)=>d).join(", ")}</p>`;
@@ -548,7 +548,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                             onClick={() => { const updated = [...features]; updated[fIdx].sub_features.push(createEmptySubFeature()); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'subfeature', fIdx, sIdx: updated[fIdx].sub_features.length - 1 }); }}
                             className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-md text-left text-[10px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors mt-1"
                           >
-                            <Plus size={10}/> Add Sub-Feature
+                            <Plus size={10}/> Add Story
                           </button>
                         )}
                       </div>
@@ -707,19 +707,19 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
               </div>
             )}
 
-            {/* SUB-FEATURE NODE */}
+            {/* Story NODE */}
             {selectedNode.type === 'subfeature' && selectedNode.fIdx !== undefined && selectedNode.sIdx !== undefined && (
               <div className="max-w-6xl mx-auto p-4 md:p-8 animate-fade-in space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-                  <div className="flex items-center gap-2 text-emerald-600"><Cpu size={24}/> <h2 className="text-xl md:text-2xl font-black">Sub-Feature Definition</h2></div>
-                  {isEdit && <button onClick={() => { const updated = [...features]; updated[selectedNode.fIdx!].sub_features.splice(selectedNode.sIdx!, 1); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'feature', fIdx: selectedNode.fIdx }); }} className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 self-start sm:self-auto"><Trash2 size={12}/> Delete Sub-Feature</button>}
+                  <div className="flex items-center gap-2 text-emerald-600"><Cpu size={24}/> <h2 className="text-xl md:text-2xl font-black">Story Definition</h2></div>
+                  {isEdit && <button onClick={() => { const updated = [...features]; updated[selectedNode.fIdx!].sub_features.splice(selectedNode.sIdx!, 1); setFormData({...formData, features_data: updated}); setSelectedNode({ type: 'feature', fIdx: selectedNode.fIdx }); }} className="text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 self-start sm:self-auto"><Trash2 size={12}/> Delete Story</button>}
                 </div>
 
                 {isEdit ? (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 gap-4">
-                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Sub-Feature Name</label><input value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'name', e.target.value)} className="w-full px-3 py-2 text-base border rounded font-bold" placeholder="E.g. OAuth Flow Integration" /></div>
-                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Purpose / Rationale</label><textarea rows={2} value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].purpose} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'purpose', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" placeholder="Why is this sub-feature being built..." /></div>
+                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Story Name</label><input value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'name', e.target.value)} className="w-full px-3 py-2 text-base border rounded font-bold" placeholder="E.g. OAuth Flow Integration" /></div>
+                      <div><label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">Purpose / Rationale</label><textarea rows={2} value={features[selectedNode.fIdx].sub_features[selectedNode.sIdx].purpose} onChange={e => updateSubFeature(selectedNode.fIdx!, selectedNode.sIdx!, 'purpose', e.target.value)} className="w-full px-3 py-2 text-sm border rounded" placeholder="Why is this Story being built..." /></div>
                     </div>
 
                     {/* Dev Traceability Editor (Date & Time Focus) */}
@@ -848,7 +848,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                     {/* View Mode Data Representation */}
                     <div className="xl:col-span-2 border-b pb-6">
                       <div className="flex flex-wrap items-center gap-3 mb-3">
-                        <h3 className="text-2xl md:text-3xl font-bold">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name || "Unnamed Sub-Feature"}</h3>
+                        <h3 className="text-2xl md:text-3xl font-bold">{features[selectedNode.fIdx].sub_features[selectedNode.sIdx].name || "Unnamed Story"}</h3>
                         <Badge className={cn("px-2 py-0.5 border-none", 
                           features[selectedNode.fIdx].sub_features[selectedNode.sIdx].dev_traceability?.status === 'Deployed' ? 'bg-emerald-100 text-emerald-700' :
                           features[selectedNode.fIdx].sub_features[selectedNode.sIdx].dev_traceability?.status === 'Pending Development' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'
@@ -1095,7 +1095,7 @@ export default function SandboxPlanningView({ activeProject }: { activeProject: 
                                         <div className="flex items-center gap-2 text-muted-foreground font-medium flex-wrap">
                                           <CornerDownRight size={12} className="text-muted-foreground/50"/>
                                           <Cpu size={12} className={devStatus === 'Deployed' ? "text-emerald-500" : "text-slate-400"}/>
-                                          <span className={cn(devStatus === 'Deployed' ? "text-emerald-700 font-bold" : "text-foreground")}>{sub.name || "Unnamed Sub-feature"}</span>
+                                          <span className={cn(devStatus === 'Deployed' ? "text-emerald-700 font-bold" : "text-foreground")}>{sub.name || "Unnamed Story"}</span>
                                           <Badge className={cn("text-[9px] px-1.5 py-0 border-none", 
                                             devStatus === 'Deployed' ? 'bg-emerald-100 text-emerald-700' :
                                             devStatus === 'Pending Development' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'
