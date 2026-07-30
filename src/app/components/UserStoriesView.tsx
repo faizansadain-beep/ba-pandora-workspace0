@@ -52,15 +52,16 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
     setIsUploading(true);
 
     const mappedData = excelData.map(row => ({
-      story_id: row['Story ID'] || `US-${Math.floor(Math.random() * 90000)}`,
-      title: row['Title'] || row['Short Title'] || 'Untitled Story',
-      as_a: row['As a'] || row['Persona'] || '',
-      i_want_to: row['I want to'] || row['Action'] || '',
-      so_that: row['So that'] || row['Value'] || '',
-      story_points: parseInt(row['Story Points']) || 0,
-      priority: row['Priority'] || 'Medium',
-      status: row['Status'] || 'Backlog',
-      acceptance_criteria: [], // Bulk uploads typically won't carry deep nested JSON for ACs in a flat sheet
+      id: `US-${Math.floor(Math.random() * 900000)}`, // Generate the primary key
+      story_id: row['story_id'] || `US-${Math.floor(Math.random() * 90000)}`,
+      title: row['title'] || 'Untitled Story',
+      as_a: row['as_a'] || '',
+      i_want_to: row['i_want_to'] || '',
+      so_that: row['so_that'] || '',
+      story_points: parseInt(row['story_points']) || 0,
+      priority: row['priority'] || 'Medium',
+      status: row['status'] || 'Backlog',
+      acceptance_criteria: [], 
       project_name: activeProject
     }));
 
