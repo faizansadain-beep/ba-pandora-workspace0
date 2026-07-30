@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
-import { Plus, Download, ListChecks, CheckCircle2, XCircle, Clock, Edit, Trash2, X, Wand2, FileText, Beaker, Link2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Download, ListChecks, CheckCircle2, XCircle, Clock, Edit, Trash2, X, Wand2, FileText, Beaker, Link2, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
+import { BulkUploadBtn } from "./BulkUploadBtn";
+import * as XLSX from 'xlsx';
 
 export default function AcceptanceCriteriaView({ activeProject }: { activeProject: string }) {
   const [dbAc, setDbAc] = useState<any[]>([]);
@@ -13,6 +15,10 @@ export default function AcceptanceCriteriaView({ activeProject }: { activeProjec
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Search State
+  const [searchQuery, setSearchQuery] = useState("");
   
   const [formData, setFormData] = useState({
     id: "",
@@ -45,6 +51,107 @@ export default function AcceptanceCriteriaView({ activeProject }: { activeProjec
   useEffect(() => {
     fetchData();
   }, [activeProject]);
+
+  // --- SEARCH FILTER ---
+  const filteredAc = useMemo(() => {
+    if (!searchQuery) return dbAc;
+    const lowerQ = searchQuery.toLowerCase();
+    return dbAc.filter(a => 
+      (a.ac_id && a.ac_id.toLowerCase().includes(lowerQ)) ||
+      (a.title && a.title.toLowerCase().includes(lowerQ)) ||
+      (a.story_reference && a.story_reference.toLowerCase().includes(lowerQ)) ||
+      (a.given_context && a.given_context.toLowerCase().includes(lowerQ)) ||
+      (a.when_action && a.when_action.toLowerCase().includes(lowerQ)) ||
+      (a.then_result && a.then_result.toLowerCase().includes(lowerQ)) ||
+      (a.checklist_description && a.checklist_description.toLowerCase().includes(lowerQ))
+    );
+  }, [dbAc, searchQuery]);
+
+  // --- EXPORTS ---
+  const exportToExcel = () => {
+    if (filteredAc.length === 0) return alert("No Criteria to export.");
+    const exportData = filteredAc.map(a => ({
+      "AC ID": a.ac_id,
+      "Title": a.title,
+      "Story Link": a.story_reference || "Unlinked",
+      "Format": a.format,
+      "Given": a.format === 'BDD' ? a.given_context : "",
+      "When": a.format === 'BDD' ? a.when_action : "",
+      "Then": a.format === 'BDD' ? a.then_result : "",
+      "Description": a.format === 'Checklist' ? a.checklist_description : "",
+      "Status": a.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Acceptance Criteria");
+    XLSX.writeFile(wb, `${activeProject}_Acceptance_Criteria.xlsx`);
+  };
+
+  const exportToWord = () => {
+    if (filteredAc.length === 0) return alert("No Criteria to export.");
+    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Acceptance Criteria Export</title></head><body style='font-family: Arial, sans-serif;'>";
+    const footer = "</body></html>";
+    let html = `<h1 style='color: #333;'>Acceptance Criteria - ${activeProject}</h1>`;
+
+    filteredAc.forEach(a => {
+      html += `<div style='margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px;'>`;
+      html += `<h2 style='color: #2563eb;'>[${a.ac_id}] ${a.title}</h2>`;
+      html += `<p><b>Story Link:</b> ${a.story_reference || "Unlinked"} | <b>Status:</b> ${a.status}</p>`;
+
+      if (a.format === 'BDD') {
+        html += `<div style='margin-left: 20px;'>`;
+        html += `<p style='margin: 2px 0;'><b>Given:</b> ${a.given_context || "N/A"}</p>`;
+        html += `<p style='margin: 2px 0;'><b>When:</b> ${a.when_action || "N/A"}</p>`;
+        html += `<p style='margin: 2px 0;'><b>Then:</b> ${a.then_result || "N/A"}</p>`;
+        html += `</div>`;
+      } else {
+        html += `<div style='margin-left: 20px; font-style: italic;'>`;
+        html += `<p>${a.checklist_description ? a.checklist_description.replace(/\n/g, '<br/>') : "No description provided."}</p>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+
+    const blob = new Blob(['\ufeff', header + html + footer], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeProject}_Acceptance_Criteria.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // --- BULK UPLOAD HANDLER ---
+  const handleBulkUpload = async (excelData: any[]) => {
+    if (excelData.length === 0) return alert("The uploaded file is empty.");
+    setIsUploading(true);
+
+    const mappedData = excelData.map(row => ({
+      id: `AC-${Math.floor(Math.random() * 900000)}`,
+      ac_id: row['ac_id'] || `AC-${Math.floor(Math.random() * 90000)}`,
+      story_reference: row['story_reference'] || '',
+      title: row['title'] || 'Untitled Scenario',
+      format: row['format'] || 'BDD',
+      given_context: row['given_context'] || '',
+      when_action: row['when_action'] || '',
+      then_result: row['then_result'] || '',
+      checklist_description: row['checklist_description'] || '',
+      status: row['status'] || 'Pending',
+      project_name: activeProject
+    }));
+
+    const { error } = await supabase.from('acceptance_criteria').insert(mappedData);
+
+    if (error) {
+      alert(`Upload failed: ${error.message}`);
+    } else {
+      alert(`Successfully uploaded ${mappedData.length} Acceptance Criteria!`);
+      fetchData();
+    }
+    setIsUploading(false);
+  };
+
 
   // --- CRUD: CREATE & UPDATE ---
   async function handleSave(e: React.FormEvent) {
@@ -154,9 +261,9 @@ export default function AcceptanceCriteriaView({ activeProject }: { activeProjec
     }
   };
 
-  const passedCount = dbAc.filter(a => a.status === "Passed").length;
-  const failedCount = dbAc.filter(a => a.status === "Failed").length;
-  const passRate = dbAc.length > 0 ? Math.round((passedCount / dbAc.length) * 100) : 0;
+  const passedCount = filteredAc.filter(a => a.status === "Passed").length;
+  const failedCount = filteredAc.filter(a => a.status === "Failed").length;
+  const passRate = filteredAc.length > 0 ? Math.round((passedCount / filteredAc.length) * 100) : 0;
 
   return (
     <div className="p-6 space-y-5 relative max-w-6xl mx-auto">
@@ -164,14 +271,33 @@ export default function AcceptanceCriteriaView({ activeProject }: { activeProjec
         title="Master Acceptance Criteria"
         sub={`Testable conditions and scenarios for ${activeProject}`}
         actions={
-          <>
-            <Btn variant="secondary"><Download size={13} />Export for QA</Btn>
+          <div className="flex gap-2">
+            <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
+            <Btn variant="secondary" onClick={exportToWord}><FileText size={13} />Word</Btn>
+            <Btn variant="secondary" onClick={exportToExcel}><Download size={13} />Excel</Btn>
             <Btn variant="primary" onClick={openNewForm}>
               <Plus size={13} />Add Criteria
             </Btn>
-          </>
+          </div>
         }
       />
+
+      {/* SEARCH BAR */}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-[10px] text-muted-foreground" size={16} />
+        <input 
+          type="text" 
+          placeholder="Search criteria by ID, title, or scenario definition..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 text-sm bg-card border border-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery("")} className="absolute right-3 top-[10px] text-muted-foreground hover:text-foreground">
+            <X size={16} />
+          </button>
+        )}
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -200,16 +326,21 @@ export default function AcceptanceCriteriaView({ activeProject }: { activeProjec
 
       {loading ? (
         <div className="p-12 flex justify-center text-muted-foreground text-sm">Loading acceptance criteria...</div>
-      ) : dbAc.length === 0 ? (
+      ) : filteredAc.length === 0 ? (
         <Card className="p-16 flex flex-col items-center justify-center text-center border-dashed">
           <ListChecks size={32} className="text-muted-foreground/50 mb-3" />
-          <h3 className="text-sm font-medium text-foreground">No Acceptance Criteria</h3>
-          <p className="text-xs text-muted-foreground mt-1 mb-4">Define exactly what needs to happen for a feature to be considered 'Done'.</p>
-          <Btn variant="secondary" onClick={openNewForm}>Add First Scenario</Btn>
+          <h3 className="text-sm font-medium text-foreground">{searchQuery ? "No criteria match your search." : "No Acceptance Criteria"}</h3>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">{searchQuery ? "Try adjusting your keywords." : "Define exactly what needs to happen for a feature to be considered 'Done'."}</p>
+          {!searchQuery && (
+            <div className="flex gap-2">
+              <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
+              <Btn variant="primary" onClick={openNewForm}>Add First Scenario</Btn>
+            </div>
+          )}
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {dbAc.map(ac => {
+          {filteredAc.map(ac => {
             const visuals = getStatusVisuals(ac.status);
             const StatusIcon = visuals.icon;
 
