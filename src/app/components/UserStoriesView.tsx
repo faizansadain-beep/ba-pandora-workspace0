@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Download, BookOpen, Edit, Trash2, X, Wand2, ListChecks, User, Target, Zap, LayoutTemplate, Layers } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
+import { BulkUploadBtn } from "./BulkUploadBtn";
 
 export default function UserStoriesView({ activeProject }: { activeProject: string }) {
   const [dbStories, setDbStories] = useState<any[]>([]);
@@ -12,6 +13,7 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [formData, setFormData] = useState({
     id: "",
@@ -43,6 +45,35 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
   useEffect(() => {
     fetchStories();
   }, [activeProject]);
+
+  // --- BULK UPLOAD HANDLER ---
+  const handleBulkUpload = async (excelData: any[]) => {
+    if (excelData.length === 0) return alert("The uploaded file is empty.");
+    setIsUploading(true);
+
+    const mappedData = excelData.map(row => ({
+      story_id: row['Story ID'] || `US-${Math.floor(Math.random() * 90000)}`,
+      title: row['Title'] || row['Short Title'] || 'Untitled Story',
+      as_a: row['As a'] || row['Persona'] || '',
+      i_want_to: row['I want to'] || row['Action'] || '',
+      so_that: row['So that'] || row['Value'] || '',
+      story_points: parseInt(row['Story Points']) || 0,
+      priority: row['Priority'] || 'Medium',
+      status: row['Status'] || 'Backlog',
+      acceptance_criteria: [], // Bulk uploads typically won't carry deep nested JSON for ACs in a flat sheet
+      project_name: activeProject
+    }));
+
+    const { error } = await supabase.from('user_stories').insert(mappedData);
+
+    if (error) {
+      alert(`Upload failed: ${error.message}`);
+    } else {
+      alert(`Successfully uploaded ${mappedData.length} User Stories!`);
+      fetchStories();
+    }
+    setIsUploading(false);
+  };
 
   // --- CRUD: CREATE & UPDATE ---
   async function handleSave(e: React.FormEvent) {
@@ -175,12 +206,13 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
         title="User Stories"
         sub={`Agile requirements and acceptance criteria for ${activeProject}`}
         actions={
-          <>
+          <div className="flex gap-2">
+            <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
             <Btn variant="secondary"><Download size={13} />Export Backlog</Btn>
             <Btn variant="primary" onClick={openNewForm}>
               <Plus size={13} />Write Story
             </Btn>
-          </>
+          </div>
         }
       />
 
@@ -216,7 +248,10 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
           <BookOpen size={32} className="text-muted-foreground/50 mb-3" />
           <h3 className="text-sm font-medium text-foreground">No User Stories</h3>
           <p className="text-xs text-muted-foreground mt-1 mb-4">Translate requirements into actionable Agile user stories.</p>
-          <Btn variant="secondary" onClick={openNewForm}>Write First Story</Btn>
+          <div className="flex gap-2">
+            <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
+            <Btn variant="primary" onClick={openNewForm}>Write First Story</Btn>
+          </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -458,7 +493,7 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {formData.acceptance_criteria.map((ac, index) => (
+                      {formData.acceptance_criteria.map((ac: any, index: number) => (
                         <div key={ac.id} className="bg-card border border-border rounded-lg p-3 relative group shadow-sm">
                           <div className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Scenario {index + 1}</div>
                           <div className="space-y-2">
