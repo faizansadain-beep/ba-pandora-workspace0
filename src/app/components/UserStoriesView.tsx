@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
-import { Plus, Download, BookOpen, Edit, Trash2, X, Wand2, ListChecks, User, Target, Zap, LayoutTemplate, Layers } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Download, BookOpen, Edit, Trash2, X, Wand2, ListChecks, User, Target, Zap, LayoutTemplate, Layers, FileText, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { cn, SectionHeader, Btn, Card, Badge } from "./SharedUI";
 import { BulkUploadBtn } from "./BulkUploadBtn";
+import * as XLSX from 'xlsx';
 
 export default function UserStoriesView({ activeProject }: { activeProject: string }) {
   const [dbStories, setDbStories] = useState<any[]>([]);
@@ -14,6 +15,9 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Search State
+  const [searchQuery, setSearchQuery] = useState("");
   
   const [formData, setFormData] = useState({
     id: "",
@@ -46,18 +50,93 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
     fetchStories();
   }, [activeProject]);
 
+  // --- SEARCH FILTER ---
+  const filteredStories = useMemo(() => {
+    if (!searchQuery) return dbStories;
+    const lowerQ = searchQuery.toLowerCase();
+    return dbStories.filter(s => 
+      (s.story_id && s.story_id.toLowerCase().includes(lowerQ)) ||
+      (s.title && s.title.toLowerCase().includes(lowerQ)) ||
+      (s.as_a && s.as_a.toLowerCase().includes(lowerQ)) ||
+      (s.i_want_to && s.i_want_to.toLowerCase().includes(lowerQ)) ||
+      (s.so_that && s.so_that.toLowerCase().includes(lowerQ))
+    );
+  }, [dbStories, searchQuery]);
+
+  // --- EXPORTS ---
+  const exportToExcel = () => {
+    if (filteredStories.length === 0) return alert("No stories to export.");
+    const exportData = filteredStories.map(s => ({
+      "Story ID": s.story_id,
+      "Title": s.title,
+      "As a": s.as_a,
+      "I want to": s.i_want_to,
+      "So that": s.so_that,
+      "Story Points": s.story_points,
+      "Priority": s.priority,
+      "Status": s.status,
+      "AC Count": s.acceptance_criteria ? s.acceptance_criteria.length : 0
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "User Stories");
+    XLSX.writeFile(wb, `${activeProject}_User_Stories.xlsx`);
+  };
+
+  const exportToWord = () => {
+    if (filteredStories.length === 0) return alert("No stories to export.");
+    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>User Stories Export</title></head><body style='font-family: Arial, sans-serif;'>";
+    const footer = "</body></html>";
+    let html = `<h1 style='color: #333;'>User Stories - ${activeProject}</h1>`;
+
+    filteredStories.forEach(s => {
+      html += `<div style='page-break-after: always; margin-bottom: 30px;'>`;
+      html += `<h2 style='background-color: #f3f4f6; padding: 10px; border-left: 5px solid #3b82f6;'>[${s.story_id}] ${s.title}</h2>`;
+      html += `<p><b>Status:</b> ${s.status} | <b>Priority:</b> ${s.priority} | <b>Points:</b> ${s.story_points}</p>`;
+      
+      html += `<div style='background-color: #eff6ff; padding: 15px; border: 1px solid #bfdbfe;'>`;
+      html += `<p style='margin: 0;'><b>As a</b> ${s.as_a},</p>`;
+      html += `<p style='margin: 5px 0;'><b>I want to</b> ${s.i_want_to},</p>`;
+      html += `<p style='margin: 0;'><b>So that</b> ${s.so_that}.</p>`;
+      html += `</div>`;
+
+      if (s.acceptance_criteria && s.acceptance_criteria.length > 0) {
+        html += `<h3>Acceptance Criteria</h3>`;
+        s.acceptance_criteria.forEach((ac: any, i: number) => {
+          html += `<div style='margin-left: 15px; border-left: 2px solid #10b981; padding-left: 10px; margin-bottom: 15px;'>`;
+          html += `<h4 style='color: #059669; margin-bottom: 5px;'>Scenario ${i + 1}</h4>`;
+          html += `<p style='margin: 2px 0;'><b>Given</b> ${ac.given}</p>`;
+          html += `<p style='margin: 2px 0;'><b>When</b> ${ac.when}</p>`;
+          html += `<p style='margin: 2px 0;'><b>Then</b> ${ac.then}</p>`;
+          html += `</div>`;
+        });
+      }
+      html += `<hr style='border: 1px solid #eee;'/>`;
+      html += `</div>`;
+    });
+
+    const blob = new Blob(['\ufeff', header + html + footer], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeProject}_User_Stories.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // --- BULK UPLOAD HANDLER ---
   const handleBulkUpload = async (excelData: any[]) => {
     if (excelData.length === 0) return alert("The uploaded file is empty.");
     setIsUploading(true);
 
     const mappedData = excelData.map(row => ({
-      id: `US-${Math.floor(Math.random() * 900000)}`, // Generate the primary key
+      id: `US-${Math.floor(Math.random() * 900000)}`,
       story_id: row['story_id'] || `US-${Math.floor(Math.random() * 90000)}`,
-      title: row['title'] || 'Untitled Story',
-      as_a: row['as_a'] || '',
-      i_want_to: row['i_want_to'] || '',
-      so_that: row['so_that'] || '',
+      title: row['title'] || row['Short Title'] || 'Untitled Story',
+      as_a: row['as_a'] || row['Persona'] || '',
+      i_want_to: row['i_want_to'] || row['Action'] || '',
+      so_that: row['so_that'] || row['Value'] || '',
       story_points: parseInt(row['story_points']) || 0,
       priority: row['priority'] || 'Medium',
       status: row['status'] || 'Backlog',
@@ -82,7 +161,7 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
     setIsSubmitting(true);
 
     const payload = {
-      id: isEditMode ? formData.id : `US-${Math.floor(Math.random() * 90000)}`,
+      id: isEditMode ? formData.id : `US-${Math.floor(Math.random() * 900000)}`,
       story_id: formData.story_id,
       title: formData.title,
       as_a: formData.as_a,
@@ -186,7 +265,7 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
       case "Done": return "bg-emerald-100 text-emerald-700 border-emerald-200";
       case "In Progress": return "bg-blue-100 text-blue-700 border-blue-200";
       case "Ready for Dev": return "bg-violet-100 text-violet-700 border-violet-200";
-      default: return "bg-slate-100 text-slate-700 border-slate-200"; // Backlog
+      default: return "bg-slate-100 text-slate-700 border-slate-200"; 
     }
   };
 
@@ -194,12 +273,12 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
     switch(priority) {
       case "High": return "text-red-700 bg-red-100 border-red-200";
       case "Low": return "text-blue-700 bg-blue-100 border-blue-200";
-      default: return "text-amber-700 bg-amber-100 border-amber-200"; // Medium
+      default: return "text-amber-700 bg-amber-100 border-amber-200"; 
     }
   };
 
-  const readyCount = dbStories.filter(s => s.status === "Ready for Dev").length;
-  const totalPoints = dbStories.reduce((acc, curr) => acc + (curr.story_points || 0), 0);
+  const readyCount = filteredStories.filter(s => s.status === "Ready for Dev").length;
+  const totalPoints = filteredStories.reduce((acc, curr) => acc + (curr.story_points || 0), 0);
 
   return (
     <div className="p-6 space-y-5 relative max-w-6xl mx-auto">
@@ -209,13 +288,31 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
         actions={
           <div className="flex gap-2">
             <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
-            <Btn variant="secondary"><Download size={13} />Export Backlog</Btn>
+            <Btn variant="secondary" onClick={exportToWord}><FileText size={13} />Word</Btn>
+            <Btn variant="secondary" onClick={exportToExcel}><Download size={13} />Excel</Btn>
             <Btn variant="primary" onClick={openNewForm}>
               <Plus size={13} />Write Story
             </Btn>
           </div>
         }
       />
+
+      {/* SEARCH BAR */}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-[10px] text-muted-foreground" size={16} />
+        <input 
+          type="text" 
+          placeholder="Search stories by ID, title, or narrative..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 text-sm bg-card border border-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery("")} className="absolute right-3 top-[10px] text-muted-foreground hover:text-foreground">
+            <X size={16} />
+          </button>
+        )}
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -235,8 +332,8 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
         </Card>
         <Card className="p-4 flex items-center justify-between">
           <div>
-            <div className="text-xs text-muted-foreground font-medium mb-1">Total Stories</div>
-            <div className="text-2xl font-bold">{dbStories.length}</div>
+            <div className="text-xs text-muted-foreground font-medium mb-1">{searchQuery ? "Found Stories" : "Total Stories"}</div>
+            <div className="text-2xl font-bold">{filteredStories.length}</div>
           </div>
           <BookOpen className="text-primary opacity-20" size={32} />
         </Card>
@@ -244,19 +341,21 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
 
       {loading ? (
         <div className="p-12 flex justify-center text-muted-foreground text-sm">Loading user stories...</div>
-      ) : dbStories.length === 0 ? (
+      ) : filteredStories.length === 0 ? (
         <Card className="p-16 flex flex-col items-center justify-center text-center border-dashed">
           <BookOpen size={32} className="text-muted-foreground/50 mb-3" />
-          <h3 className="text-sm font-medium text-foreground">No User Stories</h3>
-          <p className="text-xs text-muted-foreground mt-1 mb-4">Translate requirements into actionable Agile user stories.</p>
-          <div className="flex gap-2">
-            <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
-            <Btn variant="primary" onClick={openNewForm}>Write First Story</Btn>
-          </div>
+          <h3 className="text-sm font-medium text-foreground">{searchQuery ? "No stories match your search." : "No User Stories"}</h3>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">{searchQuery ? "Try adjusting your keywords." : "Translate requirements into actionable Agile user stories."}</p>
+          {!searchQuery && (
+            <div className="flex gap-2">
+              <BulkUploadBtn onUpload={handleBulkUpload} isLoading={isUploading} />
+              <Btn variant="primary" onClick={openNewForm}>Write First Story</Btn>
+            </div>
+          )}
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {dbStories.map(story => (
+          {filteredStories.map(story => (
             <div 
               key={story.id} 
               onClick={() => setSelectedStory(story)}
@@ -494,7 +593,7 @@ export default function UserStoriesView({ activeProject }: { activeProject: stri
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {formData.acceptance_criteria.map((ac: any, index: number) => (
+                      {formData.acceptance_criteria.map((ac, index) => (
                         <div key={ac.id} className="bg-card border border-border rounded-lg p-3 relative group shadow-sm">
                           <div className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Scenario {index + 1}</div>
                           <div className="space-y-2">
